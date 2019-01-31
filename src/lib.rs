@@ -48,7 +48,7 @@ where
     Self: Sized,
 {
     type PinData;
-    unsafe fn from_pinnable(src: Source) -> (Self, Self::PinData);
+    unsafe fn from_unpinned(src: Source) -> (Self, Self::PinData);
     unsafe fn on_pin(&mut self, pin_data: Self::PinData);
 }
 
@@ -60,8 +60,8 @@ pub struct Unpinned<U, T: FromUnpinned<U>> {
 impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
     type PinData = <T as FromUnpinned<U>>::PinData;
 
-    unsafe fn from_pinnable(src: Unpinned<U, T>) -> (Self, Self::PinData) {
-        <T as FromUnpinned<U>>::from_pinnable(src.u)
+    unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
+        <T as FromUnpinned<U>>::from_unpinned(src.u)
     }
 
     unsafe fn on_pin(&mut self, pin_data: Self::PinData) {
@@ -123,7 +123,7 @@ macro_rules! into_pin_stack {
     ($id:ident : $type:ty) => {
         // build the type from its data
         let mut $id = unsafe {
-            let (mut $id, data): ($type, _) = FromUnpinned::from_pinnable($id);
+            let (mut $id, data): ($type, _) = FromUnpinned::from_unpinned($id);
             FromUnpinned::on_pin(&mut $id, data);
             $id
         };
@@ -133,7 +133,7 @@ macro_rules! into_pin_stack {
     (mut $id:ident :  $type: ty) => {
         // build the type from its data
         let mut $id = unsafe {
-            let (mut $id, data): ($type, _) = FromUnpinned::from_pinnable($id);
+            let (mut $id, data): ($type, _) = FromUnpinned::from_unpinned($id);
             FromUnpinned::on_pin(&mut $id, data);
             $id
         };
@@ -174,9 +174,15 @@ mod tests {
         _pin: PhantomPinned,
     }
 
+    impl Unmovable {
+        fn slice(&self) -> &str {
+            unsafe { self.slice.as_ref() }
+        }
+    }
+
     impl FromUnpinned<String> for Unmovable {
         type PinData = ();
-        unsafe fn from_pinnable(src: String) -> (Self, Self::PinData) {
+        unsafe fn from_unpinned(src: String) -> (Self, Self::PinData) {
             (
                 Self {
                     data: src,
@@ -240,8 +246,10 @@ mod tests {
 
     #[test]
     fn stack_unmovable() {
-        let unmovable: Unpinned<String, Unmovable> = Unpinned::new(String::from("toto"));
+        let test_str = "Intel the Beagle is the greated dog in existence";
+        let unmovable: Unpinned<String, Unmovable> = Unpinned::new(String::from(test_str));
+
         into_pin_stack!(unmovable: Unmovable);
-        assert_eq!("toto", unmovable.data);
+        assert_eq!(test_str, unmovable.slice());
     }
 }
