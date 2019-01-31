@@ -118,33 +118,35 @@ macro_rules! pin_stack {
     };
 }
 
+#[doc(hidden)]
+pub unsafe fn write_pinned<Source, Dest>(source: Source, pdest: *mut Dest)
+where
+    Dest: FromUnpinned<Source>,
+{
+    let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
+    std::ptr::write(pdest, dest);
+    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
+}
+
 #[macro_export]
 macro_rules! into_pin_stack {
     ($id:ident : $type:ty) => {
-        // build the type from its data
-        let mut $id = unsafe {
-            let (mut $id, data): ($type, _) = FromUnpinned::from_unpinned($id);
-            FromUnpinned::on_pin(&mut $id, data);
-            $id
-        };
+        let source = $id;
+        let mut $id: $type = unsafe { std::mem::uninitialized() };
+
+        unsafe {
+            $crate::write_pinned(source, &mut $id as *mut _);
+        }
 
         internal_pin_stack!($id);
     };
     (mut $id:ident :  $type: ty) => {
-        // build the type from its data
-        let mut $id = unsafe {
-            let (mut $id, data): ($type, _) = FromUnpinned::from_unpinned($id);
-            FromUnpinned::on_pin(&mut $id, data);
-            $id
-        };
+        let source = $id;
+        let mut $id: $type = unsafe { std::mem::uninitialized() };
 
-        // Shadow the original binding so that it can't directly be accessed ever again.
-        let mut $id: std::pin::Pin<$crate::StackPinned<_>> = unsafe {
-            // Move the value into a fresh StackPinned
-            let $id = $crate::StackPinned::new(&mut $id);
-
-            std::pin::Pin::new_unchecked($id)
-        };
+        unsafe {
+            $crate::write_pinned(source, &mut $id as *mut _);
+        }
 
         internal_pin_stack!(mut $id);
     };
