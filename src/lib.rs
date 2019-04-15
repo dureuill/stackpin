@@ -316,6 +316,13 @@ where
     FromUnpinned::<Source>::on_pin(&mut *pdest, data);
 }
 
+#[doc(hidden)]
+pub unsafe fn correct_type_uninitialized<Source, Dest>(_: &Unpinned<Source, Dest>) -> Dest
+where
+    Dest: FromUnpinned<Source>,
+{
+    std::mem::uninitialized()
+}
 
 /// `into_pin_stack!(id : T)` rebinds `id : U` to a `PinStack<T>` if `T: FromUnpinned<U>`.
 /// Prefer `stack_let!(id = id)`.
@@ -331,7 +338,7 @@ macro_rules! into_pin_stack {
             $crate::write_pinned(source, &mut $id as *mut _);
         }
 
-        internal_pin_stack!($id);
+        $crate::internal_pin_stack!($id);
     };
     (mut $id:ident :  $type: ty) => {
         let source = $id;
@@ -341,7 +348,53 @@ macro_rules! into_pin_stack {
             $crate::write_pinned(source, &mut $id as *mut _);
         }
 
-        internal_pin_stack!(mut $id);
+        $crate::internal_pin_stack!(mut $id);
+    };
+}
+
+/// `stack_let!(id = expr)` binds a `PinStack<T>` to `id` if `expr` is an expression of type `U` where `T : FromUnpinned<U>`.
+///
+/// If `expr` is of type `Unpinned<U, T>` for some `U`, then no type annotation is necessary.
+/// If `expr` is of type `U` where `T: FromUnpinned<U>`, use `stack_let!(id : T = expr)`.
+///
+/// To bind `id` mutably, use `stack_let!(mut id = expr)`.
+#[macro_export]
+macro_rules! stack_let {
+    ($id: ident = $expr: expr) => {
+        let _stack_let_expr = $expr;
+        let mut $id = unsafe { $crate::correct_type_uninitialized(&_stack_let_expr) };
+        unsafe {
+            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
+        }
+
+        $crate::internal_pin_stack!($id);
+    };
+    (mut $id: ident = $expr: expr) => {
+        let _stack_let_expr = $expr;
+        let mut $id: $type = unsafe { $crate::correct_type_uninitialized(&_stack_let_expr) };
+        unsafe {
+            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
+        }
+
+        $crate::internal_pin_stack!(mut $id);
+    };
+    ($id: ident : $type:ty = $expr: expr) => {
+        let _stack_let_expr = $expr;
+        let mut $id: $type = unsafe { ::std::mem::uninitialized() };
+        unsafe {
+            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
+        }
+
+        $crate::internal_pin_stack!($id);
+    };
+    (mut $id: ident : $type:ty = $expr: expr) => {
+        let _stack_let_expr = $expr;
+        let mut $id: $type = unsafe { ::std::mem::uninitialized() };
+        unsafe {
+            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
+        }
+
+        $crate::internal_pin_stack!(mut $id);
     };
 }
 
@@ -375,6 +428,16 @@ mod tests {
     impl Unmovable {
         fn slice(&self) -> &str {
             unsafe { self.slice.as_ref() }
+        }
+
+        fn slice_mut<'a>(this: &'a mut PinStack<Unmovable>) -> &'a mut str {
+            unsafe { this.as_mut().get_unchecked_mut().slice.as_mut() }
+        }
+    }
+
+    impl Unmovable {
+        fn new_unpinned(src: String) -> Unpinned<String, Unmovable> {
+            Unpinned::new(src)
         }
     }
 
@@ -444,10 +507,19 @@ mod tests {
 
     #[test]
     fn stack_unmovable() {
-        let test_str = "Intel the Beagle is the greated dog in existence";
+        let test_str = "Intel the Beagle is the greatest dog in existence";
         let unmovable: Unpinned<String, Unmovable> = Unpinned::new(String::from(test_str));
 
         into_pin_stack!(unmovable: Unmovable);
         assert_eq!(test_str, unmovable.slice());
+    }
+
+    #[test]
+    fn let_stack_unmovable() {
+        let test_str = "Intel the Beagle is the greatest dog in existence";
+        stack_let!(mut unmovable: Unmovable = Unmovable::new_unpinned(String::from(test_str)));
+        let slice = Unmovable::slice_mut(&mut unmovable);
+        slice.make_ascii_uppercase();
+        assert_eq!(test_str.to_ascii_uppercase(), Unmovable::slice(&unmovable));
     }
 }
