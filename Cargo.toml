@@ -1,6 +1,6 @@
 [package]
-name = "stackpinned"
-version = "0.1.0"
+name = "stackpin"
+version = "0.0.1"
 authors = ["Louis Dureuil <louis.dureuil@xinra.net>"]
 edition = "2018"
 
