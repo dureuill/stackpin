@@ -155,6 +155,7 @@
 
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::pin::Pin;
 
 /// Struct that represents data that is pinned to the stack, at the point of declaration.
 ///
@@ -266,8 +267,7 @@ impl<U, T: FromUnpinned<U>> Unpinned<U, T> {
 macro_rules! internal_pin_stack {
     ($id:ident) => {
         // Shadow the original binding so that it can't directly be accessed ever again.
-        let $id: std::pin::Pin<$crate::StackPinned<_>> = unsafe {
-            // Move the value into a fresh StackPinned
+        let $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
             std::pin::Pin::new_unchecked($id)
@@ -275,8 +275,7 @@ macro_rules! internal_pin_stack {
     };
     (mut $id:ident) => {
         // Shadow the original binding so that it can't directly be accessed ever again.
-        let mut $id: std::pin::Pin<$crate::StackPinned<_>> = unsafe {
-            // Move the value into a fresh StackPinned
+        let mut $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
             std::pin::Pin::new_unchecked($id)
@@ -345,6 +344,9 @@ macro_rules! into_pin_stack {
         internal_pin_stack!(mut $id);
     };
 }
+
+/// Short-hand for `Pin<StackPinned<T>>`
+pub type PinStack<'a, T> = Pin<StackPinned<'a, T>>;
 
 #[cfg(test)]
 mod tests {
@@ -421,10 +423,10 @@ mod tests {
 
     #[test]
     fn simple_function_call() {
-        fn f(p: Pin<StackPinned<NUnpin>>) {
+        fn f(p: PinStack<NUnpin>) {
             assert_eq!(p.x, 42);
         }
-        fn g(p: &mut Pin<StackPinned<Unpin>>) {
+        fn g(p: &mut PinStack<Unpin>) {
             p.x = 12;
         }
         let nunpin = NUnpin {
