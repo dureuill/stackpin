@@ -1,3 +1,9 @@
+//! This example demonstrates a "FrozenTree" where nodes contain safe back pointers to their parents.
+//!
+//! To build a `FrozenTree`, one starts with a `Tree` and add the various nodes of the tree.
+//! When all nodes are added, the `Tree` is pinned to stack by using it as source in a call to the `stack_let` macro.
+//! During this operation, it becomes a `FrozenTree` where each node creates a backlink to its parent, at the cost of the resulting
+//! becoming "frozen", i.e. nodes can't be added/removed anymore.
 pub mod frozen_tree {
 
     use stackpin::FromUnpinned;
@@ -47,6 +53,7 @@ pub mod frozen_tree {
 
         unsafe fn from_unpinned(tree: Tree<T>) -> (Self, ()) {
             (
+                // Just move the existing root to the `FrozenTree`.
                 Self {
                     root: tree.root.frozen,
                     _pinned: std::marker::PhantomPinned,
@@ -56,6 +63,7 @@ pub mod frozen_tree {
         }
 
         unsafe fn on_pin(&mut self, _data: ()) {
+            // recursively "fix up" the back reference of each node so that it points to its parent node
             self.root.on_pin()
         }
     }
