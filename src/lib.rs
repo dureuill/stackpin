@@ -48,7 +48,7 @@
 //! #     _pinned: PhantomPinned
 //! # }
 //! use stackpin::FromUnpinned;
-//! impl FromUnpinned<String> for Unmovable {
+//! unsafe impl FromUnpinned<String> for Unmovable {
 //!     // This associated type can be used to retain information between the creation of the instance and its pinning.
 //!     // This allows for some sort of "two-steps initialization" without having to store the initialization part in the
 //!     // type itself.
@@ -87,7 +87,7 @@
 //! # }
 //! # use stackpin::Unpinned;
 //! # use stackpin::FromUnpinned;
-//! # impl FromUnpinned<String> for Unmovable {
+//! # unsafe impl FromUnpinned<String> for Unmovable {
 //! #     type PinData = ();
 //! #     unsafe fn from_unpinned(s: String) -> (Self, ()) {
 //! #         (
@@ -118,7 +118,7 @@
 //! # }
 //! # use stackpin::Unpinned;
 //! # use stackpin::FromUnpinned;
-//! # impl FromUnpinned<String> for Unmovable {
+//! # unsafe impl FromUnpinned<String> for Unmovable {
 //! #     type PinData = ();
 //! #     unsafe fn from_unpinned(s: String) -> (Self, ()) {
 //! #         (
@@ -205,7 +205,16 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 ///
 /// Implementers of `FromUnpinned<Source>` indicate that they can be built from a `Source` instance,
 /// to the condition that they will be pinned afterwards.
-pub trait FromUnpinned<Source>
+///
+/// # Safety
+///
+/// This trait both exposes unsafe functions and is unsafe to implement.
+/// * Unsafe functions are exposed because the functions have the preconditions of having to be
+/// called from the `into_pin_stack!` and `stack_let!` macros.
+/// * The trait itself is unsafe to implement because implementers must provide implementations of
+/// the functions that must upheld invariants that cannot be checked by the compiler. See the
+/// documentation of each function for information on the invariants.
+pub unsafe trait FromUnpinned<Source>
 where
     Self: Sized,
 {
@@ -220,7 +229,8 @@ where
     ///
     /// * This function is used by the construction macros, it is never safe to call directly.
     /// * Implementers of this function  are **not** allowed to consider that the type won't ever move **yet**.
-    ///   (in particular, the `Self` instance is returned by this function)
+    ///   (in particular, the `Self` instance is returned by this function). The type should be
+    ///   movable at this point.
     unsafe fn from_unpinned(src: Source) -> (Self, Self::PinData);
 
     /// Performs a second initialization step, resulting in the pinning of the `Self` instance.
@@ -230,8 +240,8 @@ where
     /// * This function is used by the construction macros, it is never safe to call directly.
     /// * Implementers of this function **are** allowed to consider that the type won't move ever again.
     ///   You can for instance set autoborrows safely in this function.
-    /// * For convenience, a naked mutable borrow is given. Implementers of this function are **not** allowed
-    ///   to move out of this mutable borrow.
+    /// * For convenience, a naked mutable borrow is directly given.
+    ///   Implementers of this function are **not** allowed to move out of this mutable borrow.
     unsafe fn on_pin(&mut self, pin_data: Self::PinData);
 }
 
@@ -241,7 +251,7 @@ pub struct Unpinned<U, T: FromUnpinned<U>> {
     t: std::marker::PhantomData<T>,
 }
 
-impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
+unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
     type PinData = <T as FromUnpinned<U>>::PinData;
 
     unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
@@ -440,7 +450,7 @@ mod tests {
         }
     }
 
-    impl FromUnpinned<String> for Unmovable {
+    unsafe impl FromUnpinned<String> for Unmovable {
         type PinData = ();
         unsafe fn from_unpinned(src: String) -> (Self, Self::PinData) {
             (
