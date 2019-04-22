@@ -19,16 +19,25 @@
 //!
 //! # Stack pinnable types
 //!
-//! A type T that wants to benefit from the guarantees provided by [`StackPinned`] should enforce a couple of requirements:
-//! 1. The type should be [`!Unpin`](https://doc.rust-lang.org/nightly/std/pin/index.html#unpin). This is necessary to enforce the "drop will be run" guarantee
-//! 2. The type should **not** provide any safe way to construct an instance of itself.
+//! A type T that wants to benefit from the guarantees provided by [`StackPinned`] should be
+//! [`!Unpin`]. This is necessary to enforce the "drop will be run" guarantee.
 //!
-//! For example, let's consider the following `Unmovable` struct:
+//! Additionally, the `stackpin` crate promotes an idiom where "unmovable" types are strictly
+//! separated from movable types, and are preferably only accessible through `PinStack`.
+//!
+//! For example, let's consider the following `Unmovable` struct (from the [documentation for the
+//! `pin` module](https://doc.rust-lang.org/std/pin/index.html)):
 //! ```
 //! use std::marker::PhantomPinned;
+//! use std::ptr::NonNull;
 //! struct Unmovable {
+//!     // Owned data
 //!     s: String,
-//!     _pinned: PhantomPinned
+//!     // Self referential pointer meant to point to `s`
+//!     slice: NonNull<String>,
+//!     // Obligatory marker that makes this struct `!Unpin`.
+//!     // Without this, implementing `FromUnpinned` for `Unmovable` would not be safe.
+//!     _pinned: PhantomPinned,
 //! }
 //! ```
 //!
@@ -43,11 +52,14 @@
 //! type that would normally serve as parameters in a "constructor" function.
 //! ```
 //! # use std::marker::PhantomPinned;
+//! # use std::ptr::NonNull;
 //! # struct Unmovable {
 //! #     s: String,
-//! #     _pinned: PhantomPinned
+//! #     slice: NonNull<String>,
+//! #     _pinned: PhantomPinned,
 //! # }
 //! use stackpin::FromUnpinned;
+//! // An `Unmovable` can be created from a `String`
 //! unsafe impl FromUnpinned<String> for Unmovable {
 //!     // This associated type can be used to retain information between the creation of the instance and its pinning.
 //!     // This allows for some sort of "two-steps initialization" without having to store the initialization part in the
@@ -62,6 +74,9 @@
 //!         (
 //!             Self {
 //!                 s,
+//!                 // We will "fix" this dangling pointer once the data will be pinned
+//!                 // and guaranteed not to move anymore.
+//!                 slice: NonNull::dangling(),
 //!                 _pinned: PhantomPinned,
 //!             },
 //!             (),
@@ -69,9 +84,11 @@
 //!     }
 //!
 //!     // Performs a second initialization step on an instance that is already guaranteed to never move again.
-//!     // This allows to e.g. set self borrow with the guarantee that they will remain valid
+//!     // This allows to e.g. set self borrow with the guarantee that they will remain valid.
 //!     unsafe fn on_pin(&mut self, _data: ()) {
-//!         // do nothing
+//!         // Data will never move again, set the pointer to our own internal String whose address
+//!         // will never change anymore
+//!         self.slice = NonNull::from(&self.s);
 //!     }
 //! }
 //! ```
@@ -81,9 +98,11 @@
 //!
 //! ```
 //! # use std::marker::PhantomPinned;
+//! # use std::ptr::NonNull;
 //! # struct Unmovable {
 //! #     s: String,
-//! #     _pinned: PhantomPinned
+//! #     slice: NonNull<String>,
+//! #     _pinned: PhantomPinned,
 //! # }
 //! # use stackpin::Unpinned;
 //! # use stackpin::FromUnpinned;
@@ -93,13 +112,14 @@
 //! #         (
 //! #             Self {
 //! #                 s,
+//! #                 slice: NonNull::dangling(),
 //! #                 _pinned: PhantomPinned,
 //! #             },
 //! #             (),
 //! #         )
 //! #     }
 //! #     unsafe fn on_pin(&mut self, _data: ()) {
-//! #         // do nothing
+//! #         self.slice = NonNull::from(&self.s);
 //! #     }
 //! # }
 //! impl Unmovable {
@@ -112,9 +132,11 @@
 //! Then, a user of the `Unmovable` struct can simply build an instance by using the [`stack_let`] macro:
 //! ```
 //! # use std::marker::PhantomPinned;
+//! # use std::ptr::NonNull;
 //! # struct Unmovable {
 //! #     s: String,
-//! #     _pinned: PhantomPinned
+//! #     slice: NonNull<String>,
+//! #     _pinned: PhantomPinned,
 //! # }
 //! # use stackpin::Unpinned;
 //! # use stackpin::FromUnpinned;
@@ -124,13 +146,14 @@
 //! #         (
 //! #             Self {
 //! #                 s,
+//! #                 slice: NonNull::dangling(),
 //! #                 _pinned: PhantomPinned,
 //! #             },
 //! #             (),
 //! #         )
 //! #     }
 //! #     unsafe fn on_pin(&mut self, _data: ()) {
-//! #         // do nothing
+//! #         self.slice = NonNull::from(&self.s);
 //! #     }
 //! # }
 //! # impl Unmovable {
