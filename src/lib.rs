@@ -404,10 +404,9 @@ pub type PinStack<'a, T> = Pin<StackPinned<'a, T>>;
 #[cfg(test)]
 mod tests {
     use super::FromUnpinned;
-    use super::StackPinned;
+    use super::PinStack;
     use super::Unpinned;
     use std::marker::PhantomPinned;
-    use std::pin::Pin;
     use std::ptr::NonNull;
 
     struct NUnpin {
