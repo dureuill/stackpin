@@ -4,10 +4,13 @@
 //! When all nodes are added, the `Tree` is pinned to stack by using it as source in a call to the `stack_let` macro.
 //! During this operation, it becomes a `FrozenTree` where each node creates a backlink to its parent, at the cost of the resulting
 //! becoming "frozen", i.e. nodes can't be added/removed anymore.
+//!
+//! Note that this is an example implementation provided for demonstration purpose, and is not in any way
+//! a "production-grade" implementation.
 pub mod frozen_tree {
 
     use stackpin::FromUnpinned;
-    use stackpin::PinStack;
+    use std::pin::Pin;
     use std::ptr::NonNull;
 
     pub struct Tree<T> {
@@ -31,6 +34,9 @@ pub mod frozen_tree {
 
     impl<T> FrozenNode<T> {
         fn on_pin(&mut self) {
+            // Note: the implementation of on_pin could use a "pointer bump" algorithm
+            // similar to PointerDepthFirstIterator, but we simply use a recursive version
+            // for simplicity.
             let r = &*self;
             let parent_ptr = NonNull::from(r);
             for child in self.children.iter_mut() {
@@ -141,9 +147,9 @@ pub mod frozen_tree {
             &mut self.data
         }
 
-        pub fn pin_data_mut<'a>(pin: &'a mut PinStack<'_, Self>) -> &'a mut T {
+        pub fn pin_data_mut(pin: Pin<&mut Self>) -> &mut T {
             // safety: one cannot move the node itself even when moving its data.
-            unsafe { &mut pin.as_mut().get_unchecked_mut().data }
+            unsafe { &mut pin.get_unchecked_mut().data }
         }
 
         pub fn iter_children(&self) -> impl DoubleEndedIterator<Item = &Self> {
