@@ -148,6 +148,16 @@ pub mod frozen_tree {
             }
         }
 
+        /// # Panics
+        ///
+        /// If T is a ZST.
+        pub fn iter_depth_first_pointer(&self) -> impl Iterator<Item = &FrozenNode<T>> {
+            assert!(std::mem::size_of::<T>() > 0);
+            PointerDepthFirstIterator {
+                current_node: Some(self.root()),
+            }
+        }
+
         pub fn iter_breadth_first(&self) -> impl Iterator<Item = &FrozenNode<T>> {
             BreadthFirstIterator {
                 visit_stack: std::iter::once(&self.root).collect(),
@@ -186,6 +196,46 @@ pub mod frozen_tree {
             })
         }
     }
+
+    struct PointerDepthFirstIterator<'a, T> {
+        current_node: Option<&'a FrozenNode<T>>,
+    }
+
+    impl<'a, T: 'a> Iterator for PointerDepthFirstIterator<'a, T> {
+        type Item = &'a FrozenNode<T>;
+
+        fn next(&mut self) -> Option<&'a FrozenNode<T>> {
+            let current_node = self.current_node?;
+            let next_node = current_node
+                .children
+                .first()
+                .or_else(|| Self::get_sibling(current_node));
+            std::mem::replace(&mut self.current_node, next_node)
+        }
+    }
+
+    impl<'a, T: 'a> PointerDepthFirstIterator<'a, T> {
+        fn get_sibling(mut current_node: &'a FrozenNode<T>) -> Option<&'a FrozenNode<T>> {
+            loop {
+                let parent = current_node.parent()?;
+                // compute address in parent
+                let self_pointer = current_node as *const FrozenNode<T>;
+                let children_base = parent.children.as_ptr();
+                let index = Self::ptr_distance_from(children_base, self_pointer);
+                if let Some(node) = parent.children.get(index + 1) {
+                    return Some(node);
+                }
+                current_node = parent;
+            }
+        }
+
+        fn ptr_distance_from(base: *const FrozenNode<T>, offset: *const FrozenNode<T>) -> usize {
+            let base = base as usize;
+            let offset = offset as usize;
+            let distance = offset - base;
+            distance / std::mem::size_of::<FrozenNode<T>>()
+        }
+    }
 }
 
 use stackpin::stack_let;
@@ -208,6 +258,13 @@ fn main() {
     }
     assert_eq!(
         tree.iter_depth_first()
+            .map(|node| *node.data())
+            .collect::<Vec<_>>(),
+        vec!["root", "A", "AA", "AAA", "AB", "B", "BA", "BB", "BBA"]
+    );
+
+    assert_eq!(
+        tree.iter_depth_first_pointer()
             .map(|node| *node.data())
             .collect::<Vec<_>>(),
         vec!["root", "A", "AA", "AAA", "AB", "B", "BA", "BB", "BBA"]
