@@ -39,10 +39,35 @@ pub mod frozen_tree {
             }
         }
 
-        unsafe fn as_node(&self) -> &Node<T> {
-            &*(self as *const FrozenNode<T> as *const Node<T>)
+        /// # Safety
+        ///
+        /// This method performs type punning from a `&FrozenNode<T>` to a `&Node<T>`
+        ///
+        /// Since Node is `#[repr(transparent)]`, the pointer cast is legal.
+        ///
+        /// However, unsafety could arise if this is used to get a Node from a
+        /// `FrozenTree` and add new children to that node.
+        ///
+        /// Since this returns a `&Node`, on which adding children is not possible, this is perfectly safe.
+        ///
+        /// This method is meant to be used to extract the `Node` representation of a child node in a `Tree`
+        /// (not `FrozenTree`).
+        fn as_node(&self) -> &Node<T> {
+            // safety: compatible representation, pointer is not wild since it comes from `self`
+            unsafe { &*(self as *const FrozenNode<T> as *const Node<T>) }
         }
 
+        /// # Safety
+        ///
+        /// This method performs type punning from a `&mut FrozenNode<T>` to a `&mut Node<T>`
+        ///
+        /// Since Node is `#[repr(transparent)]`, the pointer cast is legal.
+        ///
+        /// However, unsafety could arise if this is used to get a Node from a
+        /// `FrozenTree` and add new children to that node.
+        ///
+        /// This method is meant to be used to extract the `Node` representation of a child node in a `Tree`
+        /// (not `FrozenTree`).
         unsafe fn as_node_mut(&mut self) -> &mut Node<T> {
             &mut *(self as *mut FrozenNode<T> as *mut Node<T>)
         }
@@ -71,11 +96,12 @@ pub mod frozen_tree {
     impl<T> Node<T> {
         pub fn add_child(&mut self, data: T) -> &Self {
             self.frozen.children.push(FrozenNode::new(data));
-            unsafe { self.frozen.children.last().unwrap().as_node() }
+            self.frozen.children.last().unwrap().as_node()
         }
 
         pub fn add_child_mut(&mut self, data: T) -> &mut Self {
             self.frozen.children.push(FrozenNode::new(data));
+            // safety: we are a `Node`, contained in a `Tree` (not `FrozenTree`)
             unsafe { self.frozen.children.last_mut().unwrap().as_node_mut() }
         }
     }
@@ -116,7 +142,7 @@ pub mod frozen_tree {
         }
 
         pub fn pin_data_mut<'a>(pin: &'a mut PinStack<'_, Self>) -> &'a mut T {
-            // should be safe because one cannot move the node itself even when moving its data.
+            // safety: one cannot move the node itself even when moving its data.
             unsafe { &mut pin.as_mut().get_unchecked_mut().data }
         }
 
@@ -129,6 +155,7 @@ pub mod frozen_tree {
         }
 
         pub fn parent(&self) -> Option<&Self> {
+            // safety: parent has been set in the on_pin method and cannot be a wild pointer
             self.parent.map(|p| unsafe { &*p.as_ptr() })
         }
     }
