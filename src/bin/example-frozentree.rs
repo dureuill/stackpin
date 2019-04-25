@@ -234,33 +234,41 @@ pub mod frozen_tree {
             let next_node = current_node
                 .children
                 .first()
-                .or_else(|| Self::get_sibling(current_node));
+                .or_else(|| Self::get_next_node(current_node));
             std::mem::replace(&mut self.current_node, next_node)
         }
     }
 
     impl<'a, T: 'a> PointerDepthFirstIterator<'a, T> {
-        fn get_sibling(mut current_node: &'a FrozenNode<T>) -> Option<&'a FrozenNode<T>> {
+        fn get_next_node(mut current_node: &'a FrozenNode<T>) -> Option<&'a FrozenNode<T>> {
             loop {
                 let parent = current_node.parent()?;
                 // compute address in parent
-                let self_pointer = current_node as *const FrozenNode<T>;
-                let children_base = parent.children.as_ptr();
-                let index = Self::ptr_distance_from(children_base, self_pointer);
-                if let Some(node) = parent.children.get(index + 1) {
+                if let Some(node) = get_next_sibling(current_node, parent) {
                     return Some(node);
                 }
                 current_node = parent;
             }
         }
-
-        fn ptr_distance_from(base: *const FrozenNode<T>, offset: *const FrozenNode<T>) -> usize {
-            let base = base as usize;
-            let offset = offset as usize;
-            let distance = offset - base;
-            distance / std::mem::size_of::<FrozenNode<T>>()
-        }
     }
+
+    fn ptr_distance_from<T>(base: *const FrozenNode<T>, offset: *const FrozenNode<T>) -> usize {
+        let base = base as usize;
+        let offset = offset as usize;
+        let distance = offset - base;
+        distance / std::mem::size_of::<FrozenNode<T>>()
+    }
+
+    fn get_next_sibling<'a, T>(
+        current: &'a FrozenNode<T>,
+        parent: &'a FrozenNode<T>,
+    ) -> Option<&'a FrozenNode<T>> {
+        let self_pointer = current as *const FrozenNode<T>;
+        let children_base = parent.children.as_ptr();
+        let index = ptr_distance_from(children_base, self_pointer);
+        parent.children.get(index + 1)
+    }
+
 }
 
 use stackpin::stack_let;
