@@ -175,11 +175,9 @@ pub mod frozen_tree {
             }
         }
 
-        /// # Panics
-        ///
-        /// If T is a ZST.
         pub fn iter_depth_first_pointer(&self) -> impl Iterator<Item = &FrozenNode<T>> {
-            assert!(std::mem::size_of::<T>() > 0);
+            // Should theorically never happen since FrozenNode contains a Vec
+            assert!(std::mem::size_of::<FrozenNode<T>>() > 0);
             PointerDepthFirstIterator {
                 current_node: Some(self.root()),
             }
