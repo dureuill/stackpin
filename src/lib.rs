@@ -192,13 +192,13 @@ use std::pin::Pin;
 ///
 /// Because this property cannot be guaranteed by safe rust, constructing an instance of a
 /// [`StackPinned`] directly is `unsafe`.
-/// Rather, one should use the one of the creation macros that return a [`PinStack`] instance,
+/// Rather, one should use one of the creation macros that return a [`PinStack`] instance,
 /// such as [`pin_stack`], [`into_pin_stack`] or [`stack_let`].
 ///
 /// In particular, one should note the following about [`StackPinned`] instance:
 /// * It is impossible to safely pass a [`StackPinned`] instance to a function
 /// * It is impossible to safely return a [`StackPinned`] instance from a function
-/// * It is impossible to store a [`StackPinned`] instance inside of a struct
+/// * It is impossible to safely store a [`StackPinned`] instance inside of a struct
 ///
 /// Instead, one should replace [`StackPinned<T>`] with [`PinStack<T>`] in each of these situations.
 ///
@@ -256,7 +256,7 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 ///
 /// # Safety
 ///
-/// This trait both exposes unsafe functions and is unsafe to implement.
+/// This trait both exposes unsafe functions **and** is unsafe to implement.
 /// * Unsafe functions are exposed because the functions have the preconditions of having to be
 /// called from the [`into_pin_stack`] or [`stack_let`] macros.
 /// * The trait itself is unsafe to implement because implementers must provide implementations of
