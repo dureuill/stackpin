@@ -1,6 +1,6 @@
 //! The `stackpin` crate exposes a [`StackPinned`] type that allows to represent [`!Unpin`] data that should be [pinned](https://doc.rust-lang.org/std/pin/index.html) to the stack
 //! at the point of declaration.
-//! The crate exposes a trait, [`FromUnpinned`], as well as macros (notably [`stack_let`]) that make safely creating [`StackPinned`] instances easier.
+//! The crate exposes a trait, [`FromUnpinned`], as well as a [`stack_let`] macro that makes safely creating [`StackPinned`] instances easier.
 //! The crate also exposes the [`PinStack`] type alias for `Pin<StackPinned<T>>`.
 //!
 //! This crate was inspired from the [pin-utils] crate, the main differences being:
@@ -11,8 +11,7 @@
 //! * The syntax for the `stack_let!(mut id : ty = expr)` macro attempts to mimic a regular `let mut id : ty = expr` statement.
 //! * The provided [`FromUnpinned`] trait and [`Unpinned`] struct aim at separating unmovable types
 //! from the data that can be used to construct them. `stackpin` aims at promoting a model where
-//! all unmovable types are only accessible once pinned. However, for types for which this property
-//! isn't desirable, one can still use the [`pin_stack`] macro to pin a `T` in place.
+//! all unmovable types are only accessible once pinned.
 //! * The [`StackPinned<T>`] type expresses strong guarantee about the fact that the destructor for
 //! `T` will be run.
 //! * The `stackpin` crate solely focuses on stack pinning. The [pin-utils] crate also provides
@@ -100,7 +99,7 @@
 //! ```
 //! With `FromUnpinned<Data>` implemented for `T`, one can now add a "constructor method" that would return an
 //! `Unpinned<Data, T>`. The `Unpinned<U, T>` struct is a simple helper struct around `U` that maintains the destination
-//! type `T`. This is used by, e.g., the [`stack_let`] macro to infer the type of `T` that the user may want to produce.
+//! type `T`. This is used by the [`stack_let`] macro to infer the type of `T` that the user may want to produce.
 //!
 //! ```
 //! # use std::marker::PhantomPinned;
@@ -177,7 +176,6 @@
 //! [`StackPinned`]: struct.StackPinned.html
 //! [`StackPinned<T>`]: struct.StackPinned.html
 //! [`FromUnpinned`]: trait.FromUnpinned.html
-//! [`pin_stack`]: macro.pin_stack.html
 //! [`stack_let`]: macro.stack_let.html
 //! [`PinStack`]: type.PinStack.html
 //! [`PinStack<T>`]: type.PinStack.html
@@ -192,8 +190,7 @@ use std::pin::Pin;
 ///
 /// Because this property cannot be guaranteed by safe rust, constructing an instance of a
 /// [`StackPinned`] directly is `unsafe`.
-/// Rather, one should use one of the creation macros that return a [`PinStack`] instance,
-/// such as [`pin_stack`], [`into_pin_stack`] or [`stack_let`].
+/// Rather, one should use the [`stack_let`] macro that returns a [`PinStack`] instance.
 ///
 /// In particular, one should note the following about [`StackPinned`] instance:
 /// * It is impossible to safely pass a [`StackPinned`] instance to a function
@@ -213,22 +210,17 @@ use std::pin::Pin;
 /// [`StackPinned<T>`]: struct.StackPinned.html
 /// [`PinStack`]: type.PinStack.html
 /// [`PinStack<T>`]: type.PinStack.html
-/// [`pin_stack`]: macro.pin_stack.html
-/// [`into_pin_stack`]: macro.into_pin_stack.html
 /// [`stack_let`]: macro.stack_let.html
 #[repr(transparent)]
 pub struct StackPinned<'pin, T>(&'pin mut T);
 
 impl<'pin, T> StackPinned<'pin, T> {
     /// # Safety
-    /// Currently the only way to build a safe [`StackPinned<T>`] instance is to use one of the
-    /// [`pin_stack`], [`into_pin_stack`] or [`stack_let`] macros that will return a
-    /// [`PinStack<T>`] instance.
+    /// Currently the only way to build a safe [`StackPinned<T>`] instance is to use the
+    /// [`stack_let`] macro that will return a [`PinStack<T>`] instance.
     ///
     /// [`StackPinned<T>`]: struct.StackPinned.html
     /// [`PinStack<T>`]: type.PinStack.html
-    /// [`pin_stack`]: macro.pin_stack.html
-    /// [`into_pin_stack`]: macro.into_pin_stack.html
     /// [`stack_let`]: macro.stack_let.html
     #[inline(always)]
     pub unsafe fn new(t: &'pin mut T) -> Self {
@@ -258,12 +250,11 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 ///
 /// This trait both exposes unsafe functions **and** is unsafe to implement.
 /// * Unsafe functions are exposed because the functions have the preconditions of having to be
-/// called from the [`into_pin_stack`] or [`stack_let`] macros.
+/// called from the [`stack_let`] macro.
 /// * The trait itself is unsafe to implement because implementers must provide implementations of
 /// the functions that must upheld invariants that cannot be checked by the compiler. See the
 /// documentation of each function for information on the invariants.
 ///
-/// [`into_pin_stack`]: macro.into_pin_stack.html
 /// [`stack_let`]: macro.stack_let.html
 /// [`StackPinned`]: struct.StackPinned.html
 pub unsafe trait FromUnpinned<Source>
@@ -279,7 +270,7 @@ where
     ///
     /// # Safety
     ///
-    /// * This function is used by the construction macros, it is never safe to call directly.
+    /// * This function is used by the construction macro, it is never safe to call directly.
     /// * Implementers of this function  are **not** allowed to consider that the type won't ever move **yet**.
     ///   (in particular, the `Self` instance is returned by this function). The type should be
     ///   movable at this point.
@@ -289,7 +280,7 @@ where
     ///
     /// # Safety
     ///
-    /// * This function is used by the construction macros, it is never safe to call directly.
+    /// * This function is used by the construction macro, it is never safe to call directly.
     /// * Implementers of this function **are** allowed to consider that the type won't move ever again.
     ///   You can for instance set autoborrows safely in this function.
     /// * For convenience, a naked mutable borrow is directly given.
@@ -388,31 +379,6 @@ macro_rules! internal_pin_stack {
     };
 }
 
-/// `pin_stack!(id)` pins the instance `id: T` to the stack and rebinds `id` to a `PinStack<T>` instance pointing to the older binding.
-/// Prefer [`stack_let!(id = id)`].
-///
-/// The `id` instance will be moved to the stack in the process.
-///
-/// To bind `id` mutably, use `pin_stack!(mut id)`.
-/// Adapted from https://docs.rs/pin-utils/0.1.0-alpha.4/src/pin_utils/stack_pin.rs.html#12-23
-///
-/// [`stack_let!(id = id)`]: macro.stack_let.html
-#[macro_export]
-macro_rules! pin_stack {
-    ($id:ident) => {
-        // immediately move the value so we can be sure of its location
-        let mut $id = $id;
-
-        $crate::internal_pin_stack!($id);
-    };
-    (mut $id:ident) => {
-        // immediately move the value so we can be sure of its location
-        let mut $id = $id;
-
-        $crate::internal_pin_stack!(mut $id);
-    };
-}
-
 #[doc(hidden)]
 pub unsafe fn write_pinned<Source, Dest>(source: Source, pdest: *mut Dest)
 where
@@ -429,38 +395,6 @@ where
     Dest: FromUnpinned<Source>,
 {
     std::mem::uninitialized()
-}
-
-/// `into_pin_stack!(id : T)` rebinds `id : U` to a [`PinStack<T>`] if [`T: FromUnpinned<U>`].
-/// Prefer [`stack_let!(id = id)`].
-///
-/// To bind `id` mutably, use `into_pin_stack!(mut id: T)`
-///
-/// [`PinStack<T>`]: type.PinStack.html
-/// [`stack_let!(id = id)`]: macro.stack_let.html
-/// [`T: FromUnpinned<U>`]: trait.FromUnpinned.html
-#[macro_export]
-macro_rules! into_pin_stack {
-    ($id:ident : $type:ty) => {
-        let source = $id;
-        let mut $id: $type = unsafe { std::mem::uninitialized() };
-
-        unsafe {
-            $crate::write_pinned(source, &mut $id as *mut _);
-        }
-
-        $crate::internal_pin_stack!($id);
-    };
-    (mut $id:ident :  $type: ty) => {
-        let source = $id;
-        let mut $id: $type = unsafe { std::mem::uninitialized() };
-
-        unsafe {
-            $crate::write_pinned(source, &mut $id as *mut _);
-        }
-
-        $crate::internal_pin_stack!(mut $id);
-    };
 }
 
 /// `stack_let!(id = expr)` binds a [`PinStack<T>`] to `id` if `expr` is an expression of type `U` where [`T: FromUnpinned<U>`].
@@ -571,61 +505,6 @@ mod tests {
         unsafe fn on_pin(&mut self, _pin_data: Self::PinData) {
             self.slice = NonNull::from(&self.data);
         }
-    }
-
-    #[test]
-    fn it_works() {
-        struct Unit;
-        let _unit = Unit;
-        pin_stack!(_unit);
-    }
-
-    #[test]
-    fn transparent_unpin() {
-        let unpin = Unpin { x: 0 };
-        pin_stack!(mut unpin);
-        unpin.x = 42;
-        assert_eq!(unpin.x, 42);
-    }
-
-    #[test]
-    fn pin_block_mutation() {
-        let nunpin = NUnpin {
-            x: 42,
-            _pinned: PhantomPinned,
-        };
-        pin_stack!(nunpin);
-        assert_eq!(nunpin.x, 42);
-    }
-
-    #[test]
-    fn simple_function_call() {
-        fn f(p: PinStack<NUnpin>) {
-            assert_eq!(p.x, 42);
-        }
-        fn g(p: &mut PinStack<Unpin>) {
-            p.x = 12;
-        }
-        let nunpin = NUnpin {
-            x: 42,
-            _pinned: PhantomPinned,
-        };
-        pin_stack!(nunpin);
-        f(nunpin);
-
-        let unpin = Unpin { x: 0 };
-        pin_stack!(mut unpin);
-        g(&mut unpin);
-        assert_eq!(unpin.x, 12);
-    }
-
-    #[test]
-    fn stack_unmovable() {
-        let test_str = "Intel the Beagle is the greatest dog in existence";
-        let unmovable: Unpinned<String, Unmovable> = Unpinned::new(String::from(test_str));
-
-        into_pin_stack!(unmovable: Unmovable);
-        assert_eq!(test_str, unmovable.slice());
     }
 
     #[test]
