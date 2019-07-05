@@ -182,6 +182,7 @@
 //! [`Unpinned`]: struct.Unpinned.html
 //! [`!Unpin`]: https://doc.rust-lang.org/std/pin/index.html#unpin
 
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::pin::Pin;
@@ -351,10 +352,7 @@ unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
 
 impl<U, T: FromUnpinned<U>> Unpinned<U, T> {
     pub fn new(u: U) -> Self {
-        Self {
-            u,
-            t: std::marker::PhantomData,
-        }
+        Self { u, t: PhantomData }
     }
 }
 
@@ -390,11 +388,36 @@ where
 }
 
 #[doc(hidden)]
-pub unsafe fn correct_type_uninitialized<Source, Dest>(_: &Unpinned<Source, Dest>) -> Dest
+pub unsafe fn from_unpinned<Source, Dest>(
+    source: Unpinned<Source, Dest>,
+) -> (Dest, Dest::PinData, PhantomData<Unpinned<Source, Dest>>)
 where
     Dest: FromUnpinned<Source>,
 {
-    std::mem::uninitialized()
+    let (dest, data) = FromUnpinned::from_unpinned(source);
+    (dest, data, PhantomData)
+}
+
+#[doc(hidden)]
+pub unsafe fn from_source<Dest, Source>(
+    source: Source,
+) -> (Dest, Dest::PinData, PhantomData<Source>)
+where
+    Dest: FromUnpinned<Source>,
+{
+    let (dest, data) = FromUnpinned::from_unpinned(source);
+    (dest, data, PhantomData)
+}
+
+#[doc(hidden)]
+pub unsafe fn on_pin<Source, Dest>(
+    pdest: *mut Dest,
+    data: Dest::PinData,
+    _source: PhantomData<Source>,
+) where
+    Dest: FromUnpinned<Source>,
+{
+    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
 }
 
 /// `stack_let!(id = expr)` binds a [`PinStack<T>`] to `id` if `expr` is an expression of type `U` where [`T: FromUnpinned<U>`].
@@ -410,38 +433,28 @@ where
 #[macro_export]
 macro_rules! stack_let {
     ($id: ident = $expr: expr) => {
-        let _stack_let_expr = $expr;
-        let mut $id = unsafe { $crate::correct_type_uninitialized(&_stack_let_expr) };
-        unsafe {
-            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
-        }
+        let (mut $id, _stack_data, _stack_phantom) = unsafe { $crate::from_unpinned($expr) };
+        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
 
         $crate::internal_pin_stack!($id);
     };
     (mut $id: ident = $expr: expr) => {
-        let _stack_let_expr = $expr;
-        let mut $id: $type = unsafe { $crate::correct_type_uninitialized(&_stack_let_expr) };
-        unsafe {
-            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
-        }
+        let (mut $id, _stack_data, _stack_phantom) = unsafe { $crate::from_unpinned($expr) };
+        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
 
         $crate::internal_pin_stack!(mut $id);
     };
     ($id: ident : $type:ty = $expr: expr) => {
-        let _stack_let_expr = $expr;
-        let mut $id: $type = unsafe { ::std::mem::uninitialized() };
-        unsafe {
-            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
-        }
+        let (mut $id, _stack_data, _stack_phantom) =
+            unsafe { $crate::from_source::<$type, _>($expr) };
+        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
 
         $crate::internal_pin_stack!($id);
     };
     (mut $id: ident : $type:ty = $expr: expr) => {
-        let _stack_let_expr = $expr;
-        let mut $id: $type = unsafe { ::std::mem::uninitialized() };
-        unsafe {
-            $crate::write_pinned(_stack_let_expr, &mut $id as *mut _);
-        }
+        let (mut $id, _stack_data, _stack_phantom) =
+            unsafe { $crate::from_source::<$type, _>($expr) };
+        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
 
         $crate::internal_pin_stack!(mut $id);
     };
@@ -510,7 +523,7 @@ mod tests {
     #[test]
     fn let_stack_unmovable() {
         let test_str = "Intel the Beagle is the greatest dog in existence";
-        stack_let!(mut unmovable: Unmovable = Unmovable::new_unpinned(String::from(test_str)));
+        stack_let!(mut unmovable = Unmovable::new_unpinned(String::from(test_str)));
         let slice = Unmovable::slice_mut(&mut unmovable);
         slice.make_ascii_uppercase();
         assert_eq!(test_str.to_ascii_uppercase(), Unmovable::slice(&unmovable));
