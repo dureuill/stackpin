@@ -253,7 +253,7 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 /// * Unsafe functions are exposed because the functions have the preconditions of having to be
 /// called from the [`stack_let`] macro.
 /// * The trait itself is unsafe to implement because implementers must provide implementations of
-/// the functions that must upheld invariants that cannot be checked by the compiler. See the
+/// the functions that must uphold invariants that cannot be checked by the compiler. See the
 /// documentation of each function for information on the invariants.
 ///
 /// [`stack_let`]: macro.stack_let.html
