@@ -13,4 +13,4 @@ stack_let!(unmovable = Unmovable::new_unpinned("Intel the Beagle")); // this cre
 
 For `Unmovable` a struct implementing the `FromUnpinned<String>` trait.
 
-See the [crate documentation](https://doc.rs/stackpin) for details, or look directly [at the examples](https://github.com/dureuill/stackpin/tree/master/src/bin).
+See the [crate documentation](https://docs.rs/stackpin) for details, or look directly [at the examples](https://github.com/dureuill/stackpin/tree/master/src/bin).
