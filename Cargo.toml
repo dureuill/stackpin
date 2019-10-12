@@ -1,6 +1,6 @@
 [package]
 name = "stackpin"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["Louis Dureuil <louis.dureuil@xinra.net>"]
 license = "MIT OR Apache-2.0"
 description = "Crate for data that should be pinned to the stack at the point of declaration."
