@@ -2,6 +2,14 @@
 name = "stackpin"
 version = "0.0.1"
 authors = ["Louis Dureuil <louis.dureuil@xinra.net>"]
+license = "MIT OR Apache-2.0"
+description = "Crate for data that should be pinned to the stack at the point of declaration."
+repository = "https://github.com/dureuill/stackpin"
+documentation = "https://docs.rs/stackpin"
+readme = "README.md"
+maintenance = "experimental"
+keyword = ["pin", "ownership", "self", "reference"]
+categories = ["rust-patterns"]
 edition = "2018"
 
 [dependencies]
