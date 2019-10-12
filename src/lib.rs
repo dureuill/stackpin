@@ -471,15 +471,6 @@ mod tests {
     use std::marker::PhantomPinned;
     use std::ptr::NonNull;
 
-    struct NUnpin {
-        x: u64,
-        _pinned: PhantomPinned,
-    }
-
-    struct Unpin {
-        x: u64,
-    }
-
     struct Unmovable {
         data: String,
         slice: NonNull<String>,
