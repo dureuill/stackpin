@@ -1,21 +1,25 @@
 use stackpin::stack_let;
-use stackpin::FromUnpinned;
-use stackpin::Unpinned;
+use stackpin::InitPinned;
+use stackpin::InitData;
+use stackpin::UnsafeInitToken;
 use std::marker::PhantomPinned;
 
 struct Unmovable {
     s: String,
     _pinned: PhantomPinned,
+    _token: UnsafeInitToken,
 }
 
-unsafe impl FromUnpinned<String> for Unmovable {
+unsafe impl InitPinned for Unmovable {
+    type InitData = String;
     type PinData = ();
 
-    unsafe fn from_unpinned(s: String) -> (Self, ()) {
+    unsafe fn init(data: Self::InitData, _token: UnsafeInitToken) -> (Self, ()) {
         (
             Self {
-                s,
+                s: data,
                 _pinned: PhantomPinned,
+                _token,
             },
             (),
         )
@@ -23,6 +27,10 @@ unsafe impl FromUnpinned<String> for Unmovable {
 
     unsafe fn on_pin(&mut self, _data: ()) {
         // do nothing
+    }
+
+    fn unsafe_init_token(&self) -> &UnsafeInitToken {
+        &self._token
     }
 }
 
@@ -33,8 +41,8 @@ impl Drop for Unmovable {
 }
 
 impl Unmovable {
-    fn new_unpinned<T: Into<String>>(s: T) -> Unpinned<String, Unmovable> {
-        Unpinned::new(s.into())
+    fn new_unpinned<T: Into<String>>(s: T) -> InitData<Self> {
+        InitData(s.into())
     }
 }
 
