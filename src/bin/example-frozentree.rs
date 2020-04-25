@@ -9,7 +9,8 @@
 //! a "production-grade" implementation.
 pub mod frozen_tree {
 
-    use stackpin::FromUnpinned;
+    use stackpin::InitPinned;
+    use stackpin::UnsafeInitToken;
     use std::pin::Pin;
     use std::ptr::NonNull;
 
@@ -24,6 +25,7 @@ pub mod frozen_tree {
     pub struct FrozenTree<T> {
         root: FrozenNode<T>,
         _pinned: std::marker::PhantomPinned,
+        _token: UnsafeInitToken,
     }
 
     pub struct FrozenNode<T> {
@@ -79,15 +81,17 @@ pub mod frozen_tree {
         }
     }
 
-    unsafe impl<T> FromUnpinned<Tree<T>> for FrozenTree<T> {
+    unsafe impl<T> InitPinned for FrozenTree<T> {
+        type InitData = Tree<T>;
         type PinData = ();
 
-        unsafe fn from_unpinned(tree: Tree<T>) -> (Self, ()) {
+        unsafe fn init(tree: Tree<T>, token: UnsafeInitToken) -> (Self, ()) {
             (
                 // Just move the existing root to the `FrozenTree`.
                 Self {
                     root: tree.root.frozen,
                     _pinned: std::marker::PhantomPinned,
+                    _token : token
                 },
                 (),
             )
@@ -96,6 +100,10 @@ pub mod frozen_tree {
         unsafe fn on_pin(&mut self, _data: ()) {
             // recursively "fix up" the back reference of each node so that it points to its parent node
             self.root.on_pin()
+        }
+
+        fn unsafe_init_token(&self) -> &UnsafeInitToken {
+            &self._token
         }
     }
 
