@@ -7,9 +7,11 @@ description = "Crate for data that should be pinned to the stack at the point of
 repository = "https://github.com/dureuill/stackpin"
 documentation = "https://docs.rs/stackpin"
 readme = "README.md"
-maintenance = "experimental"
-keyword = ["pin", "ownership", "self", "reference"]
+keywords = ["pin", "ownership", "self", "reference"]
 categories = ["rust-patterns"]
 edition = "2018"
+
+[badges]
+maintenance = { status = "experimental" }
 
 [dependencies]
