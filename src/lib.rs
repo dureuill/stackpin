@@ -182,10 +182,9 @@
 //! [`Unpinned`]: struct.Unpinned.html
 //! [`!Unpin`]: https://doc.rust-lang.org/std/pin/index.html#unpin
 
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ops::DerefMut;
-use std::pin::Pin;
+use std::{marker::PhantomPinned, pin::Pin};
 
 /// Struct that represents data that is pinned to the stack, at the point of declaration.
 ///
@@ -258,10 +257,8 @@ impl<'pin, T> DerefMut for StackPinned<'pin, T> {
 ///
 /// [`stack_let`]: macro.stack_let.html
 /// [`StackPinned`]: struct.StackPinned.html
-pub unsafe trait FromUnpinned<Source>
-where
-    Self: Sized,
-{
+pub unsafe trait InitPinned {
+    type InitData;
     /// This associated type can be used to retain information between the creation of the instance and its pinning.
     /// This allows for some sort of "two-steps initialization" without having to store the initialization part in the
     /// type itself.
@@ -275,7 +272,9 @@ where
     /// * Implementers of this function  are **not** allowed to consider that the type won't ever move **yet**.
     ///   (in particular, the `Self` instance is returned by this function). The type should be
     ///   movable at this point.
-    unsafe fn from_unpinned(src: Source) -> (Self, Self::PinData);
+    unsafe fn init(data: Self::InitData, token: UnsafeInitToken) -> (Self, Self::PinData)
+    where
+        Self: Sized;
 
     /// Performs a second initialization step, resulting in the pinning of the `Self` instance.
     ///
@@ -287,72 +286,26 @@ where
     /// * For convenience, a naked mutable borrow is directly given.
     ///   Implementers of this function are **not** allowed to move out of this mutable borrow.
     unsafe fn on_pin(&mut self, pin_data: Self::PinData);
+
+    fn unsafe_init_token(&self) -> &UnsafeInitToken;
 }
 
-/// A helper struct around `U` that remembers the `T` destination type.
-///
-/// This struct is typically used to build [`PinStack`] values using the [`stack_let`] macro
-/// without having to specify the destination type.
-///
-/// # Example
-///
-/// ```
-/// # use std::marker::PhantomPinned;
-/// # use std::ptr::NonNull;
-/// # struct Unmovable {
-/// #     s: String,
-/// #     slice: NonNull<String>,
-/// #     _pinned: PhantomPinned,
-/// # }
-/// # use stackpin::Unpinned;
-/// # use stackpin::FromUnpinned;
-/// # unsafe impl FromUnpinned<String> for Unmovable {
-/// #     type PinData = ();
-/// #     unsafe fn from_unpinned(s: String) -> (Self, ()) {
-/// #         (
-/// #             Self {
-/// #                 s,
-/// #                 slice: NonNull::dangling(),
-/// #                 _pinned: PhantomPinned,
-/// #             },
-/// #             (),
-/// #         )
-/// #     }
-/// #     unsafe fn on_pin(&mut self, _data: ()) {
-/// #         self.slice = NonNull::from(&self.s);
-/// #     }
-/// # }
-/// use stackpin::stack_let;
-/// // Without `Unpinned`
-/// fn new_string(s : impl Into<String>) -> String { s.into() }
-/// stack_let!(unmovable : Unmovable = new_string("toto"));
-/// // With `Unpinned`
-/// fn new_unpinned(s : impl Into<String>) -> Unpinned<String, Unmovable> { Unpinned::new(s.into()) }
-/// stack_let!(unmovable = new_unpinned("toto"));
-/// ```
-///
-/// [`stack_let`]: macro.stack_let.html
-/// [`PinStack`]: type.PinStack.html
-pub struct Unpinned<U, T: FromUnpinned<U>> {
-    u: U,
-    t: std::marker::PhantomData<T>,
-}
+struct UnsafeInitImpl(PhantomPinned);
 
-unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
-    type PinData = <T as FromUnpinned<U>>::PinData;
+pub struct UnsafeInitToken(UnsafeInitImpl);
 
-    unsafe fn from_unpinned(src: Unpinned<U, T>) -> (Self, Self::PinData) {
-        <T as FromUnpinned<U>>::from_unpinned(src.u)
-    }
-
-    unsafe fn on_pin(&mut self, pin_data: Self::PinData) {
-        <T as FromUnpinned<U>>::on_pin(self, pin_data)
+impl UnsafeInitToken {
+    pub unsafe fn new() -> Self {
+        Self(UnsafeInitImpl(PhantomPinned))
     }
 }
 
-impl<U, T: FromUnpinned<U>> Unpinned<U, T> {
-    pub fn new(u: U) -> Self {
-        Self { u, t: PhantomData }
+#[repr(transparent)]
+pub struct InitData<T: InitPinned>(pub T::InitData);
+
+impl<T: InitPinned> InitData<T> {
+    pub unsafe fn init(self, token: UnsafeInitToken) -> (T, T::PinData) {
+        T::init(self.0, token)
     }
 }
 
@@ -377,49 +330,6 @@ macro_rules! internal_pin_stack {
     };
 }
 
-#[doc(hidden)]
-pub unsafe fn write_pinned<Source, Dest>(source: Source, pdest: *mut Dest)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
-    std::ptr::write(pdest, dest);
-    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
-}
-
-#[doc(hidden)]
-pub unsafe fn from_unpinned<Source, Dest>(
-    source: Unpinned<Source, Dest>,
-) -> (Dest, Dest::PinData, PhantomData<Unpinned<Source, Dest>>)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::from_unpinned(source);
-    (dest, data, PhantomData)
-}
-
-#[doc(hidden)]
-pub unsafe fn from_source<Dest, Source>(
-    source: Source,
-) -> (Dest, Dest::PinData, PhantomData<Source>)
-where
-    Dest: FromUnpinned<Source>,
-{
-    let (dest, data) = FromUnpinned::from_unpinned(source);
-    (dest, data, PhantomData)
-}
-
-#[doc(hidden)]
-pub unsafe fn on_pin<Source, Dest>(
-    pdest: *mut Dest,
-    data: Dest::PinData,
-    _source: PhantomData<Source>,
-) where
-    Dest: FromUnpinned<Source>,
-{
-    FromUnpinned::<Source>::on_pin(&mut *pdest, data);
-}
-
 /// `stack_let!(id = expr)` binds a [`PinStack<T>`] to `id` if `expr` is an expression of type `U` where [`T: FromUnpinned<U>`].
 ///
 /// If `expr` is of type [`Unpinned<U, T>`] for some `U`, then no type annotation is necessary.
@@ -433,28 +343,30 @@ pub unsafe fn on_pin<Source, Dest>(
 #[macro_export]
 macro_rules! stack_let {
     ($id: ident = $expr: expr) => {
-        let (mut $id, _stack_data, _stack_phantom) = unsafe { $crate::from_unpinned($expr) };
-        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
+        let (mut $id, _stack_data) =
+            unsafe { $crate::InitData::init($expr, $crate::UnsafeInitToken::new()) };
+        unsafe { $crate::InitPinned::on_pin(&mut $id, _stack_data) }
 
         $crate::internal_pin_stack!($id);
     };
     (mut $id: ident = $expr: expr) => {
-        let (mut $id, _stack_data, _stack_phantom) = unsafe { $crate::from_unpinned($expr) };
-        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
+        let (mut $id, _stack_data) =
+            unsafe { $crate::InitData::init($expr, $crate::UnsafeInitToken::new()) };
+        unsafe { $crate::InitPinned::on_pin(&mut $id, _stack_data) }
 
         $crate::internal_pin_stack!(mut $id);
     };
     ($id: ident : $type:ty = $expr: expr) => {
-        let (mut $id, _stack_data, _stack_phantom) =
-            unsafe { $crate::from_source::<$type, _>($expr) };
-        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
+        let (mut $id, _stack_data): ($type, _) =
+            unsafe { $crate::InitPinned::init($expr, $crate::UnsafeInitToken::new()) };
+        unsafe { $crate::InitPinned::on_pin(&mut $id, _stack_data) }
 
         $crate::internal_pin_stack!($id);
     };
     (mut $id: ident : $type:ty = $expr: expr) => {
-        let (mut $id, _stack_data, _stack_phantom) =
-            unsafe { $crate::from_source::<$type, _>($expr) };
-        unsafe { $crate::on_pin(&mut $id as *mut _, _stack_data, _stack_phantom) }
+        let (mut $id, _stack_data): ($type, _) =
+            unsafe { $crate::InitPinned::init($expr, $crate::UnsafeInitToken::new()) };
+        unsafe { $crate::InitPinned::on_pin(&mut $id, _stack_data) }
 
         $crate::internal_pin_stack!(mut $id);
     };
@@ -465,9 +377,10 @@ pub type PinStack<'a, T> = Pin<StackPinned<'a, T>>;
 
 #[cfg(test)]
 mod tests {
-    use super::FromUnpinned;
+    use super::InitData;
+    use super::InitPinned;
     use super::PinStack;
-    use super::Unpinned;
+    use super::UnsafeInitToken;
     use std::marker::PhantomPinned;
     use std::ptr::NonNull;
 
@@ -475,6 +388,7 @@ mod tests {
         data: String,
         slice: NonNull<String>,
         _pin: PhantomPinned,
+        _token: UnsafeInitToken,
     }
 
     impl Unmovable {
@@ -488,19 +402,21 @@ mod tests {
     }
 
     impl Unmovable {
-        fn new_unpinned(src: String) -> Unpinned<String, Unmovable> {
-            Unpinned::new(src)
+        fn new_unpinned(src: String) -> InitData<Self> {
+            InitData(src)
         }
     }
 
-    unsafe impl FromUnpinned<String> for Unmovable {
+    unsafe impl InitPinned for Unmovable {
+        type InitData = String;
         type PinData = ();
-        unsafe fn from_unpinned(src: String) -> (Self, Self::PinData) {
+        unsafe fn init(src: String, token: UnsafeInitToken) -> (Self, Self::PinData) {
             (
                 Self {
                     data: src,
                     slice: NonNull::dangling(),
                     _pin: PhantomPinned,
+                    _token: token,
                 },
                 (),
             )
@@ -508,6 +424,10 @@ mod tests {
 
         unsafe fn on_pin(&mut self, _pin_data: Self::PinData) {
             self.slice = NonNull::from(&self.data);
+        }
+
+        fn unsafe_init_token(&self) -> &crate::UnsafeInitToken {
+            &self._token
         }
     }
 
