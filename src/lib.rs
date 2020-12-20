@@ -182,10 +182,12 @@
 //! [`Unpinned`]: struct.Unpinned.html
 //! [`!Unpin`]: https://doc.rust-lang.org/std/pin/index.html#unpin
 
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::pin::Pin;
+#![cfg_attr(not(test), no_std)]
+
+use core::marker::PhantomData;
+use core::ops::Deref;
+use core::ops::DerefMut;
+use core::pin::Pin;
 
 /// Struct that represents data that is pinned to the stack, at the point of declaration.
 ///
@@ -335,7 +337,7 @@ where
 /// [`PinStack`]: type.PinStack.html
 pub struct Unpinned<U, T: FromUnpinned<U>> {
     u: U,
-    t: std::marker::PhantomData<T>,
+    t: core::marker::PhantomData<T>,
 }
 
 unsafe impl<U, T: FromUnpinned<U>> FromUnpinned<Unpinned<U, T>> for T {
@@ -364,7 +366,7 @@ macro_rules! internal_pin_stack {
         let $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
-            std::pin::Pin::new_unchecked($id)
+            core::pin::Pin::new_unchecked($id)
         };
     };
     (mut $id:ident) => {
@@ -372,7 +374,7 @@ macro_rules! internal_pin_stack {
         let mut $id: $crate::PinStack<_> = unsafe {
             let $id = $crate::StackPinned::new(&mut $id);
 
-            std::pin::Pin::new_unchecked($id)
+            core::pin::Pin::new_unchecked($id)
         };
     };
 }
@@ -383,7 +385,7 @@ where
     Dest: FromUnpinned<Source>,
 {
     let (dest, data) = FromUnpinned::<Source>::from_unpinned(source);
-    std::ptr::write(pdest, dest);
+    core::ptr::write(pdest, dest);
     FromUnpinned::<Source>::on_pin(&mut *pdest, data);
 }
 
@@ -468,8 +470,8 @@ mod tests {
     use super::FromUnpinned;
     use super::PinStack;
     use super::Unpinned;
-    use std::marker::PhantomPinned;
-    use std::ptr::NonNull;
+    use core::marker::PhantomPinned;
+    use core::ptr::NonNull;
 
     struct Unmovable {
         data: String,
